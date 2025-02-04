@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"YoannLetacq/todo-api.git/config"
+	"YoannLetacq/todo-api.git/internal/models"
+
+	"gorm.io/gorm"
 
 	"github.com/joho/godotenv"
 )
@@ -30,5 +33,22 @@ func testconfigGetenv(t *testing.T) {
 	got = config.GetEnv(testKey, defaultValue)
 	if got != defaultValue {
 		t.Errorf("config.Getenv(%q, %q) = %q; veut %q", testKey, defaultValue, got, defaultValue)
+	}
+}
+
+// testInitDB teste que la base de donnée s'initialise correctement
+func testInitDB(t *testing.T) {
+	var DB *gorm.DB
+	// Initialise la BDD
+	config.InitDB(true)
+
+	// Vérifier si la table "users" existe
+	if !DB.Migrator().HasTable(&models.User{}) {
+		t.Fatal("Erreur : la table 'users' n'a pas été créée")
+	}
+
+	// Vérifier si la table "tasks" existe
+	if !DB.Migrator().HasTable(&models.Task{}) {
+		t.Fatal("Erreur : la table 'tasks' n'a pas été créée")
 	}
 }
