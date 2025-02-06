@@ -8,7 +8,7 @@ import (
 )
 
 // Initialize .env file
-func initEnv() {
+func InitEnv() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Failed to load .env file.")

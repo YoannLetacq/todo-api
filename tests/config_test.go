@@ -1,4 +1,4 @@
-package config
+package tests
 
 import (
 	"os"
@@ -6,8 +6,6 @@ import (
 
 	"YoannLetacq/todo-api.git/config"
 	"YoannLetacq/todo-api.git/internal/models"
-
-	"gorm.io/gorm"
 
 	"github.com/joho/godotenv"
 )
@@ -38,7 +36,7 @@ func testconfigGetenv(t *testing.T) {
 
 // testInitDB teste que la base de donnée s'initialise correctement
 func testInitDB(t *testing.T) {
-	var DB *gorm.DB
+	var DB = config.DB
 	// Initialise la BDD
 	config.InitDB(true)
 
