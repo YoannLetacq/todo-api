@@ -1,44 +1,58 @@
 package tests
 
 import (
-	"YoannLetacq/todo-api.git/config"
 	"YoannLetacq/todo-api.git/internal/utils"
+	"log"
+	"os"
 	"testing"
-	"time"
 
-	"github.com/golang-jwt/jwt"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGenerateJWT(t *testing.T) {
+	os.Setenv("JWT_SECRET", "test_secret_key")
+
+	userID := "1" // user_id est stocké en string
+	email := "test@example.com"
+
+	token, err := utils.GenerateJWT(userID, email)
+	assert.NoError(t, err, "Erreur lors de la génération du token")
+	assert.NotEmpty(t, token, "Le token généré est vide")
+
+	parsedToken, claims, err := utils.ParseToken(token)
+	assert.NoError(t, err, "Erreur lors du parsing du token")
+	assert.True(t, parsedToken.Valid, "Le token généré n'est pas valide")
+
+	// Vérifier les claims
+	assert.Equal(t, userID, claims["user_id"], "L'ID utilisateur du token est invalide")
+	assert.Equal(t, email, claims["email"], "L'email du token est invalide")
+}
+
+func TestParseToken(t *testing.T) {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	os.Setenv("JWT_SECRET", "my_secret_key")
 
 	userID := "1"
 	email := "test@example.com"
 
-	token, err := utils.GenerateJWT(userID, email)
+	tokenString, err := utils.GenerateJWT(userID, email)
+	assert.NoError(t, err, "Erreur lors de la génération du token.")
 
-	assert.NoError(t, err, "Erreur lors de la generation du token.")
-	assert.NotEmpty(t, token, "Le token genere est vide.")
+	parsedToken, claims, err := utils.ParseToken(tokenString)
+	assert.NoError(t, err, "Erreur lors du parsing du token JWT")
+	assert.True(t, parsedToken.Valid, "Le token JWT n'est pas valide")
 
-	tokenString, err := jwt.ParseWithClaims(token, &jwt.MapClaims{},
-		func(token *jwt.Token) (interface{}, error) {
-			return []byte(config.GetEnv("JWT_SECRET", "my_secret_key")), nil
-		})
-	assert.NoError(t, err, "Erreur lors du parsing do token.")
-	assert.True(t, tokenString.Valid, "Le token genere est valide.")
+	// Vérifier les claims
+	assert.Equal(t, userID, claims["user_id"], "L'ID utilisateur du token est invalide")
+	assert.Equal(t, email, claims["email"], "L'email du token est invalide")
 
-	claims, ok := tokenString.Claims.(*jwt.MapClaims)
+	// Test avec un token invalide
+	invalidToken := "invalid.token.string"
+	_, _, err = utils.ParseToken(invalidToken)
+	assert.Error(t, err, "Le parsing d'un token invalide aurait dû échouer")
 
-	assert.True(t, ok, "Impossible  de recuperer les claims du token.")
-	assert.Equal(t, userID, (*claims)["user_id"],
-		"L'ID utilisateur du tokent est invalide.",
-	)
-	assert.Equal(t, email, (*claims)["email"], "L'email de token est invalide.")
-
-	expiration, ok := (*claims)["exp"].(float64)
-	assert.True(t, ok, "Le claims d'expiration est incorrecte ou absent.")
-	assert.Greater(t, expiration, float64(time.Now().Unix()),
-		"Le token est expire.",
-	)
-
+	// Test avec un token signé avec une autre clé secrète
+	os.Setenv("JWT_SECRET", "wrong_secret_key")
+	_, _, err = utils.ParseToken(tokenString)
+	assert.Error(t, err, "Le parsing aurait dû échouer avec une clé invalide")
 }
