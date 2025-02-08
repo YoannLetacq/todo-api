@@ -13,6 +13,8 @@ func InitEnv() {
 	if err != nil {
 		log.Fatal("Failed to load .env file.")
 	}
+	os.Setenv("JWT_SECRET", GetEnv("JWT_SECRET", "my_secret_key"))
+
 }
 
 // Getenv return the value for a given key of the loaded .env.
