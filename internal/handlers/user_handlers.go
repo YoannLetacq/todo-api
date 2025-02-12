@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"YoannLetacq/todo-api.git/config"
 	"YoannLetacq/todo-api.git/internal/models"
+	"YoannLetacq/todo-api.git/internal/services"
 	"YoannLetacq/todo-api.git/internal/utils"
 	"log"
 	"net/http"
@@ -13,6 +13,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var userService services.UserService
+
+func InitUserHanlers(s services.UserService) {
+	userService = s
+}
+
 func RegisterUser(c *gin.Context) {
 	var user models.User
 
@@ -21,15 +27,15 @@ func RegisterUser(c *gin.Context) {
 		return
 	}
 
+	// Hachage du mot de passe
 	hashedPass, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Échec du hachage du mot de passe."})
 		return
 	}
-
 	user.Password = string(hashedPass)
 
-	if err := config.DB.Create(&user).Error; err != nil {
+	if err := userService.RegisterUser(&user); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Échec de l'inscription"})
 		log.Println("Erreur : échec de la création de l'utilisateur", user, err)
 		return
@@ -42,26 +48,19 @@ func LoginHandler(c *gin.Context) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	var user models.User
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Requête invalide"})
 		return
 	}
 
-	// Vérifier si l'utilisateur existe
-	if err := config.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non trouvé"})
+	user, err := userService.LoginUser(req.Email, req.Password)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non trouvé ou mot de passe invalide"})
 		return
 	}
 
-	// Vérifier le mot de passe
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Mot de passe invalide"})
-		return
-	}
-
-	// Générer le token JWT en convertissant correctement l'ID en string
+	// Générer le token JWT
 	token, err := utils.GenerateJWT(strconv.Itoa(int(user.ID)), user.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Échec de la génération du token JWT"})
