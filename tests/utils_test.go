@@ -10,7 +10,7 @@ import (
 )
 
 func TestGenerateJWT(t *testing.T) {
-	os.Setenv("JWT_SECRET", "test_secret_key")
+	os.Setenv("JWT_SECRET", "my_secret_key")
 
 	userID := "1" // user_id est stocké en string
 	email := "test@example.com"

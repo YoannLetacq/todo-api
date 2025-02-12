@@ -11,7 +11,7 @@ import (
 )
 
 func GenerateJWT(userID, email string) (string, error) {
-	secretKey := config.GetEnv("JWT_SECRET", "test_secret_key")
+	secretKey := config.GetEnv("JWT_SECRET", "my_secret_key")
 	log.Println("🔑 Clé utilisée pour SIGNER :", secretKey)
 
 	if secretKey == "" {
@@ -38,7 +38,7 @@ func GenerateJWT(userID, email string) (string, error) {
 }
 
 func ParseToken(tokenString string) (*jwt.Token, map[string]string, error) {
-	secretKey := config.GetEnv("JWT_SECRET", "test_secret_key")
+	secretKey := config.GetEnv("JWT_SECRET", "my_secret_key")
 	log.Println("🔑 Clé utilisée pour VERIFICATION :", secretKey)
 
 	if secretKey == "" {
