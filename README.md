@@ -40,7 +40,6 @@ todo-api/
 │   ├── services/             # Logique métier
 │   ├── handlers/             # Gestion des routes et controllers
 │
-├── db/                      # Scripts SQL/Migrations
 │
 ├── routes/                   # Définition des routes
 │
