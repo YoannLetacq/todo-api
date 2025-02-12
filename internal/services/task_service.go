@@ -19,8 +19,10 @@ type taskService struct {
 }
 
 // Retourne une instance de TaskService
-func (s *taskService) NewTaskService(repo repository.TaskRepository) TaskService {
-	return &taskService{repo: repo}
+func NewTaskService(repo repository.TaskRepository) TaskService {
+	return &taskService{
+		repo: repo,
+	}
 }
 
 // Créer une nouvelle tâche
