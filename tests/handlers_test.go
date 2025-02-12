@@ -4,7 +4,10 @@ import (
 	"YoannLetacq/todo-api.git/config"
 	"YoannLetacq/todo-api.git/internal/handlers"
 	"YoannLetacq/todo-api.git/internal/models"
+	"YoannLetacq/todo-api.git/internal/repository"
+	"YoannLetacq/todo-api.git/internal/services"
 	"YoannLetacq/todo-api.git/internal/utils"
+
 	"bytes"
 	"encoding/json"
 	"log"
@@ -19,6 +22,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
+
+func initTaskServiceForTest() {
+	repo := repository.NewTaskRepository()
+	svc := services.NewTaskService(repo)
+	handlers.InitTaskHandlers(svc)
+}
 
 func setupTestDB() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -134,6 +143,7 @@ func createTestUserAndToken(t *testing.T) (models.User, string) {
 
 func TestCreateTask(t *testing.T) {
 	setupTestDB()
+	initTaskServiceForTest()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	_, token := createTestUserAndToken(t)
@@ -174,6 +184,7 @@ func TestCreateTask(t *testing.T) {
 
 func TestGetTasks(t *testing.T) {
 	setupTestDB()
+	initTaskServiceForTest()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	user, token := createTestUserAndToken(t)
@@ -208,6 +219,7 @@ func TestGetTasks(t *testing.T) {
 // TestGetTask verifies that a single task can be retrieved.
 func TestGetTask(t *testing.T) {
 	setupTestDB()
+	initTaskServiceForTest()
 	user, token := createTestUserAndToken(t)
 
 	// Create a task.
@@ -238,6 +250,7 @@ func TestGetTask(t *testing.T) {
 // TestUpdateTask verifies that a task can be updated, including its status.
 func TestUpdateTask(t *testing.T) {
 	setupTestDB()
+	initTaskServiceForTest()
 	user, token := createTestUserAndToken(t)
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	// Create a task.
@@ -276,6 +289,7 @@ func TestUpdateTask(t *testing.T) {
 // TestDeleteTask verifies that a task can be deleted.
 func TestDeleteTask(t *testing.T) {
 	setupTestDB()
+	initTaskServiceForTest()
 	user, token := createTestUserAndToken(t)
 
 	// Create a task.

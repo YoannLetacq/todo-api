@@ -7,12 +7,19 @@ import (
 	"strconv"
 	"strings"
 
-	"YoannLetacq/todo-api.git/config"
 	"YoannLetacq/todo-api.git/internal/models"
+	"YoannLetacq/todo-api.git/internal/services"
 	"YoannLetacq/todo-api.git/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
+
+var taskservices services.TaskService
+
+// InitTaskHandlers permet d'injecter le service dans les handlers
+func InitTaskHandlers(s services.TaskService) {
+	taskservices = s
+}
 
 // extractuserID extrait le user_id du token JWT des headers.
 func ExtractUserID(c *gin.Context) (string, error) {
@@ -67,7 +74,7 @@ func CreateTask(c *gin.Context) {
 
 	task.UserID = uint(uid)
 
-	if err := config.DB.Create(&task).Error; err != nil {
+	if err := taskservices.CreateTask(&task); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec de la création de la Task"})
 
 		log.Println("Erreur lors de la creation de la tache:", err)
@@ -90,9 +97,10 @@ func GetTasks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "userID invalide"})
 		return
 	}
-	var tasks []models.Task
-	if err := config.DB.Where("user_id= ?", uint(uid)).Find(&tasks).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec pour recuperer la Task."})
+
+	tasks, err := taskservices.GetTasksByUser(uint(uid))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echech de la recuperation des tâches."})
 		return
 	}
 
@@ -114,14 +122,20 @@ func GetTask(c *gin.Context) {
 	}
 
 	taskID := c.Param("id")
-	var task models.Task
-	if err := config.DB.First(&task, taskID).Error; err != nil {
+	tid, err := strconv.ParseUint(taskID, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de tâche invalide"})
+		return
+	}
+
+	task, err := taskservices.GetTaskByID(uint(tid))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Tâche introuvable."})
 		return
 	}
 
 	if task.UserID != uint(uid) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Cette tâche ne vous apartiens pas."})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Cette tâche ne vous appartiens pas."})
 		return
 	}
 
@@ -143,34 +157,38 @@ func UpdateTask(c *gin.Context) {
 	}
 
 	taskID := c.Param("id")
-	var task models.Task
+	tid, err := strconv.ParseUint(taskID, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de tâche invalide"})
+		return
+	}
 
-	if err := config.DB.First(&task, taskID).Error; err != nil {
+	task, err := taskservices.GetTaskByID(uint(tid))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Tâche introuvable."})
 		return
 	}
 
 	if task.UserID != uint(uid) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Cette tâche ne vous apartiens pas."})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Cette tâche ne vous appartiens pas."})
 		return
 	}
 
-	var updateTask models.Task
-	if err := c.ShouldBindJSON(&updateTask); err != nil {
+	var updateData models.Task
+	if err := c.ShouldBindJSON(&updateData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Données invalides."})
 		return
 	}
 
-	task.Title = updateTask.Title
-	task.Description = updateTask.Description
-	if updateTask.Status != "" {
-		task.Status = updateTask.Status
+	task.Title = updateData.Title
+	task.Description = updateData.Description
+	if updateData.Status != "" {
+		task.Status = updateData.Status
 	}
 
-	if err := config.DB.Save(&task).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec de la mise a jour de la Task."})
-
-		log.Println("Erreur lors de la mise a jour de la tache:", err)
+	if err := taskservices.UpdateTask(task); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec de la mise a jour de la Task", "detail": err.Error()})
+		log.Println("Erreur lors de la mise à jour de la tâche:", err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Task mise a jour !", "task": task})
@@ -191,19 +209,25 @@ func DeleteTask(c *gin.Context) {
 	}
 
 	taskID := c.Param("id")
-	var task models.Task
-	if err := config.DB.First(&task, taskID).Error; err != nil {
+	tid, err := strconv.ParseUint(taskID, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de tâche invalide"})
+		return
+	}
+
+	task, err := taskservices.GetTaskByID(uint(tid))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Tâche introuvable."})
 		return
 	}
 
 	if task.UserID != uint(uid) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Cette tâche ne vous apartiens pas."})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Cette tâche ne vous appartiens pas."})
 		return
 	}
 
-	if err := config.DB.Delete(&task).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec de la suppression de la Task."})
+	if err := taskservices.DeleteTask(task); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec de la suppression de la Task", "detail": err.Error()})
 		return
 	}
 
