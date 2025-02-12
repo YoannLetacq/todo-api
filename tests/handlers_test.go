@@ -111,3 +111,23 @@ func TestLoginHandler(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(int(user.ID)), claims["user_id"])
 	assert.Equal(t, user.Email, claims["email"])
 }
+
+func createTestUserAndToken(t *testing.T) (models.User, string) {
+	os.Setenv("JWT_SECRET", "test_secret_key")
+	password := "password"
+	hashedPass, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+	user := models.User{
+		Username: "testUser",
+		Email:    "testUser@example.com",
+		Password: string(hashedPass),
+	}
+
+	config.DB.Create(&user)
+
+	token, err := utils.GenerateJWT(strconv.Itoa(int(user.ID)), user.Email)
+	if err != nil {
+		t.Fatal("Erreur: Impossible de générer le token JWT")
+	}
+	return user, token
+}
