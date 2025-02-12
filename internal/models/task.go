@@ -8,5 +8,5 @@ type Task struct {
 	Title       string `gorm:"not null" json:"title"`
 	Description string `json:"description"`
 	Status      string `gorm:"default:'todo'" json:"status"`
-	UserID      uint   `json:"user_id"`
+	UserID      uint   `gorm:"not null"  json:"user_id"`
 }
