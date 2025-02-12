@@ -1,6 +1,15 @@
+// tests/handler_test.go
 package tests
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strconv"
+	"testing"
+
 	"YoannLetacq/todo-api.git/config"
 	"YoannLetacq/todo-api.git/internal/handlers"
 	"YoannLetacq/todo-api.git/internal/models"
@@ -8,261 +17,230 @@ import (
 	"YoannLetacq/todo-api.git/internal/services"
 	"YoannLetacq/todo-api.git/internal/utils"
 
-	"bytes"
-	"encoding/json"
-	"log"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"strconv"
-	"testing"
-
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/crypto/bcrypt"
 )
 
-func initTaskServiceForTest() {
-	repo := repository.NewTaskRepository()
-	svc := services.NewTaskService(repo)
-	handlers.InitTaskHandlers(svc)
-}
-
-func setupTestDB() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+// setHandlerTestDB initialise la BDD pour les tests de handlers.
+func setHandlerTestDB() {
 	config.InitDB(true)
-	if config.DB == nil {
-		log.Fatal("Erreur: Connexion à la BDD nulle.")
-	}
-	// Nettoyer les tables
 	config.DB.Exec("DELETE FROM users")
 	config.DB.Exec("DELETE FROM tasks")
-	if err := config.DB.AutoMigrate(&models.User{}, &models.Task{}); err != nil {
-		log.Fatal("Erreur : Echec des migrations.", err)
-	}
-
-	log.Println("Succès: Base de données initialisée avec succès.")
+	config.DB.AutoMigrate(&models.User{}, &models.Task{})
 }
 
-func TestRegisterHandler(t *testing.T) {
-	setupTestDB()
+// initHandlerTestServices initialise et injecte les services dans les handlers.
+func initHandlerTestServices() {
+	// Service User
+	userRepo := repository.NewUserRepository()
+	userSvc := services.NewUserService(userRepo)
+	handlers.InitUserHanlers(userSvc)
 
-	router := gin.Default()
-	router.POST("/register", handlers.RegisterUser)
-
-	userData := map[string]string{
-		"username": "testuser",
-		"email":    "test@example.com",
-		"password": "securepassword",
-	}
-
-	jsonData, _ := json.Marshal(userData)
-	req, _ := http.NewRequest("POST", "/register", bytes.NewBuffer(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusCreated, w.Code)
-
-	var response map[string]string
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-
-	assert.Equal(t, "Utilisateur enregistré avec succès !", response["message"])
+	// Service Task
+	taskRepo := repository.NewTaskRepository()
+	taskSvc := services.NewTaskService(taskRepo)
+	handlers.InitTaskHandlers(taskSvc)
 }
 
-func TestLoginHandler(t *testing.T) {
-	setupTestDB()
-	os.Setenv("JWT_SECRET", "my_secret_key")
-
-	// Créer un utilisateur avec un mot de passe hashé
-	hashedPass, _ := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.DefaultCost)
-	user := models.User{
-		Username: "testUser",
-		Email:    "test@example.com",
-		Password: string(hashedPass),
-	}
-	config.DB.Create(&user)
-
-	router := gin.Default()
-	router.POST("/login", handlers.LoginHandler)
-
-	loginData := map[string]string{
-		"email":    "test@example.com",
-		"password": "password",
-	}
-
-	jsonData, _ := json.Marshal(loginData)
-	req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]string
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-
-	token, exists := response["token"]
-	assert.True(t, exists, "Le token JWT est absent de la réponse")
-
-	parsedToken, claims, err := utils.ParseToken(token)
-	assert.NoError(t, err)
-	assert.True(t, parsedToken.Valid)
-
-	assert.NotEmpty(t, claims["user_id"], "Le user_id du token ne doit pas être vide")
-	assert.NotEmpty(t, claims["email"], "L'email du token ne doit pas être vide")
-
-	assert.Equal(t, strconv.Itoa(int(user.ID)), claims["user_id"])
-	assert.Equal(t, user.Email, claims["email"])
-}
-
-func createTestUserAndToken(t *testing.T) (models.User, string) {
+// createTestUser crée un utilisateur en BDD.
+func createTestUser(t *testing.T) models.User {
 	os.Setenv("JWT_SECRET", "my_secret_key")
 	password := "password"
-	hashedPass, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-
+	hashedPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal("Erreur lors du hachage du mot de passe:", err)
+	}
 	user := models.User{
 		Username: "testUser",
 		Email:    "testUser@example.com",
 		Password: string(hashedPass),
 	}
+	if err := config.DB.Create(&user).Error; err != nil {
+		t.Fatal("Erreur lors de la création de l'utilisateur:", err)
+	}
+	return user
+}
 
-	config.DB.Create(&user)
-
+// generateTokenForUser génère un token JWT pour un utilisateur.
+func generateTokenForUser(user models.User, t *testing.T) string {
 	token, err := utils.GenerateJWT(strconv.Itoa(int(user.ID)), user.Email)
 	if err != nil {
-		t.Fatal("Erreur: Impossible de générer le token JWT")
+		t.Fatal("Erreur lors de la génération du token JWT:", err)
 	}
-	return user, token
+	return token
 }
 
-func TestCreateTask(t *testing.T) {
-	setupTestDB()
-	initTaskServiceForTest()
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+// TestRegisterUserHandler teste directement le handler RegisterUser.
+func TestRegisterUserHandler(t *testing.T) {
+	setHandlerTestDB()
+	initHandlerTestServices()
 
-	_, token := createTestUserAndToken(t)
-
-	router := gin.Default()
-	router.POST("/tasks", handlers.CreateTask)
-
-	taskData := map[string]string{
-		"title": "Test Task",
-		// status: Non donné, doit être défini à "todo" par défaut
-		"description": "Test Task Description",
+	registerData := map[string]string{
+		"username": "handlerUser",
+		"email":    "handlerUser@example.com",
+		"password": "handlerPassword",
 	}
-
-	jsonData, _ := json.Marshal(taskData)
-	req, _ := http.NewRequest("POST", "/tasks", bytes.NewBuffer(jsonData))
-
+	jsonData, _ := json.Marshal(registerData)
+	req, _ := http.NewRequest("POST", "/register", bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+
+	// Créer un contexte de test Gin
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handlers.RegisterUser(c)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Equal(t, "Task crée !", response["message"])
-	log.Println(response)
-
-	task, ok := response["task"].(map[string]interface{})
-	assert.True(t, ok, "La tâche doit être un objet JSON")
-
-	assert.Equal(t, "Test Task", task["title"])
-	assert.Equal(t, "Test Task Description", task["description"])
-	assert.Equal(t, "todo", task["status"]) // test le status par defaut
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal("Erreur de parsing:", err)
+	}
+	assert.Equal(t, "Utilisateur enregistré avec succès !", resp["message"])
 }
 
-func TestGetTasks(t *testing.T) {
-	setupTestDB()
-	initTaskServiceForTest()
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+// TestLoginUserHandler teste directement le handler LoginHandler.
+func TestLoginUserHandler(t *testing.T) {
+	setHandlerTestDB()
+	initHandlerTestServices()
+
+	// Créer un utilisateur
+	user := createTestUser(t)
+
+	// Préparer la requête de login
+	loginData := map[string]string{
+		"email":    user.Email,
+		"password": "password",
+	}
+	jsonData, _ := json.Marshal(loginData)
+	req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handlers.LoginHandler(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal("Erreur de parsing:", err)
+	}
+	token, exists := resp["token"]
+	assert.True(t, exists, "Le token JWT est absent")
+	parsedToken, claims, err := utils.ParseToken(token)
+	assert.NoError(t, err)
+	assert.True(t, parsedToken.Valid)
+	assert.Equal(t, strconv.Itoa(int(user.ID)), claims["user_id"])
+}
+
+// TestCreateTaskHandler teste directement le handler CreateTask.
+func TestCreateTaskHandler(t *testing.T) {
+	setHandlerTestDB()
+	initHandlerTestServices()
+
+	user := createTestUser(t)
+	token := generateTokenForUser(user, t)
+
+	taskData := map[string]string{
+		"title":       "Handler Task",
+		"description": "Task created via handler",
+	}
+	jsonData, _ := json.Marshal(taskData)
+	req, _ := http.NewRequest("POST", "/tasks", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handlers.CreateTask(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal("Erreur de parsing:", err)
+	}
+	assert.Equal(t, "Task crée !", resp["message"])
+	task, ok := resp["task"].(map[string]interface{})
+	assert.True(t, ok, "La tâche doit être un objet JSON")
+	assert.Equal(t, "Handler Task", task["title"])
+	assert.Equal(t, "Task created via handler", task["description"])
+	assert.Equal(t, "todo", task["status"])
+}
+
+// TestGetTasksHandler teste directement le handler GetTasks.
+func TestGetTasksHandler(t *testing.T) {
+	setHandlerTestDB()
+	initHandlerTestServices()
 
 	user, token := createTestUserAndToken(t)
-
-	task1 := models.Task{Title: "Task 1", Description: "Task 1 Description", Status: "todo", UserID: user.ID}
-	task2 := models.Task{Title: "Task 2", Description: "Task 2 Description", Status: "done", UserID: user.ID}
-
+	// Créer deux tâches
+	task1 := models.Task{Title: "Task 1", Description: "Desc 1", Status: "todo", UserID: user.ID}
+	task2 := models.Task{Title: "Task 2", Description: "Desc 2", Status: "done", UserID: user.ID}
 	config.DB.Create(&task1)
 	config.DB.Create(&task2)
 
-	router := gin.Default()
-	router.GET("/tasks", handlers.GetTasks)
-
 	req, _ := http.NewRequest("GET", "/tasks", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handlers.GetTasks(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-
-	tasks, ok := response["tasks"].([]interface{})
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal("Erreur de parsing:", err)
+	}
+	tasks, ok := resp["tasks"].([]interface{})
 	assert.True(t, ok, "Les tâches doivent être un tableau JSON")
-	assert.Len(t, tasks, 2, "Il doit y avoir 2 tâches")
-	log.Println(response)
+	assert.Equal(t, 2, len(tasks))
 }
 
-// TestGetTask verifies that a single task can be retrieved.
-func TestGetTask(t *testing.T) {
-	setupTestDB()
-	initTaskServiceForTest()
+// TestGetTaskHandler teste directement le handler GetTask.
+func TestGetTaskHandler(t *testing.T) {
+	setHandlerTestDB()
+	initHandlerTestServices()
+
 	user, token := createTestUserAndToken(t)
-
-	// Create a task.
-	task := models.Task{Title: "Task Get", Description: "Description Get", Status: "done", UserID: user.ID}
+	task := models.Task{Title: "Task Get", Description: "Desc Get", Status: "done", UserID: user.ID}
 	config.DB.Create(&task)
-
-	router := gin.Default()
-	router.GET("/tasks/:id", handlers.GetTask)
 
 	req, _ := http.NewRequest("GET", "/tasks/"+strconv.Itoa(int(task.ID)), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handlers.GetTask(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-
-	taskResp, ok := response["task"].(map[string]interface{})
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal("Erreur de parsing:", err)
+	}
+	taskResp, ok := resp["task"].(map[string]interface{})
 	assert.True(t, ok)
 	assert.Equal(t, "Task Get", taskResp["title"])
-	assert.Equal(t, "Description Get", taskResp["description"])
+	assert.Equal(t, "Desc Get", taskResp["description"])
 	assert.Equal(t, "done", taskResp["status"])
 }
 
-// TestUpdateTask verifies that a task can be updated, including its status.
-func TestUpdateTask(t *testing.T) {
-	setupTestDB()
-	initTaskServiceForTest()
-	user, token := createTestUserAndToken(t)
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	// Create a task.
-	task := models.Task{Title: "Task Update", Description: "Old Description", Status: "todo", UserID: user.ID}
-	config.DB.Create(&task)
+// TestUpdateTaskHandler teste directement le handler UpdateTask.
+func TestUpdateTaskHandler(t *testing.T) {
+	setHandlerTestDB()
+	initHandlerTestServices()
 
-	router := gin.Default()
-	router.PUT("/tasks/:id", handlers.UpdateTask)
+	user, token := createTestUserAndToken(t)
+	task := models.Task{Title: "Task Update", Description: "Old Desc", Status: "todo", UserID: user.ID}
+	config.DB.Create(&task)
 
 	updatedData := map[string]string{
 		"title":       "Task Updated",
-		"description": "New Description",
+		"description": "New Desc",
 		"status":      "in progress",
 	}
 	jsonData, _ := json.Marshal(updatedData)
@@ -270,49 +248,50 @@ func TestUpdateTask(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handlers.UpdateTask(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Equal(t, "Task mise a jour !", response["message"])
-
-	taskResp, ok := response["task"].(map[string]interface{})
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal("Erreur de parsing:", err)
+	}
+	assert.Equal(t, "Task mise a jour !", resp["message"])
+	updatedTask, ok := resp["task"].(map[string]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, "Task Updated", taskResp["title"])
-	assert.Equal(t, "New Description", taskResp["description"])
-	assert.Equal(t, "in progress", taskResp["status"])
+	assert.Equal(t, "Task Updated", updatedTask["title"])
+	assert.Equal(t, "New Desc", updatedTask["description"])
+	assert.Equal(t, "in progress", updatedTask["status"])
 }
 
-// TestDeleteTask verifies that a task can be deleted.
-func TestDeleteTask(t *testing.T) {
-	setupTestDB()
-	initTaskServiceForTest()
+// TestDeleteTaskHandler teste directement le handler DeleteTask.
+func TestDeleteTaskHandler(t *testing.T) {
+	setHandlerTestDB()
+	initHandlerTestServices()
+
 	user, token := createTestUserAndToken(t)
-
-	// Create a task.
-	task := models.Task{Title: "Task Delete", Description: "Description Delete", Status: "done", UserID: user.ID}
+	task := models.Task{Title: "Task Delete", Description: "Desc Delete", Status: "done", UserID: user.ID}
 	config.DB.Create(&task)
-
-	router := gin.Default()
-	router.DELETE("/tasks/:id", handlers.DeleteTask)
 
 	req, _ := http.NewRequest("DELETE", "/tasks/"+strconv.Itoa(int(task.ID)), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handlers.DeleteTask(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal("Erreur de parsing:", err)
+	}
+	assert.Equal(t, "Task supprimée.", resp["message"])
 
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
-	assert.Equal(t, "Task supprimée.", response["message"])
-
-	// Verify that the task was removed.
+	// Vérifier que la tâche n'existe plus en base
 	var deletedTask models.Task
-	err = config.DB.First(&deletedTask, task.ID).Error
-	assert.Error(t, err) // Expected error because the task should be deleted.
+	err := config.DB.First(&deletedTask, task.ID).Error
+	assert.Error(t, err)
 }
