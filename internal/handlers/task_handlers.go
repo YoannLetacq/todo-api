@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,8 +40,8 @@ func ExtractUserID(c *gin.Context) (string, error) {
 	return userID, nil
 }
 
-// CreateHandler crée un handler pour la création de tâches.
-func CreateHandler(c *gin.Context) {
+// CreateTask crée un handler pour la création de tâches.
+func CreateTask(c *gin.Context) {
 	userID, err := ExtractUserID(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Non autorise." + err.Error()})
@@ -49,7 +50,7 @@ func CreateHandler(c *gin.Context) {
 
 	var task models.Task
 
-	if err := c.ShouldBind(&task); err != nil {
+	if err := c.ShouldBindJSON(&task); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Données invalides."})
 		return
 	}
@@ -61,16 +62,19 @@ func CreateHandler(c *gin.Context) {
 	uid, err := strconv.ParseUint(userID, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "user_id invalide"})
+		return
 	}
 
 	task.UserID = uint(uid)
 
 	if err := config.DB.Create(&task).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec de la création de la Task"})
+
+		log.Println("Erreur lors de la creation de la tache:", err)
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"error": "Task crée !", "task": task})
+	c.JSON(http.StatusCreated, gin.H{"message": "Task crée !", "task": task})
 }
 
 // GetTasks recupere toutes les tâches pour un utilisateur
@@ -92,7 +96,7 @@ func GetTasks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"taks": tasks})
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
 }
 
 // GetTask recupere une tâche pour un utilisateur GET /tasks/:id
@@ -152,7 +156,7 @@ func UpdateTask(c *gin.Context) {
 	}
 
 	var updateTask models.Task
-	if err := c.ShouldBind(&updateTask); err != nil {
+	if err := c.ShouldBindJSON(&updateTask); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Données invalides."})
 		return
 	}
@@ -165,9 +169,11 @@ func UpdateTask(c *gin.Context) {
 
 	if err := config.DB.Save(&task).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Echec de la mise a jour de la Task."})
+
+		log.Println("Erreur lors de la mise a jour de la tache:", err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"error": "Task mise a jour !", "task": task})
+	c.JSON(http.StatusOK, gin.H{"message": "Task mise a jour !", "task": task})
 }
 
 // DeleteTask supprime une tâche DELETE /tasks/delete/:id
@@ -201,5 +207,5 @@ func DeleteTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"error": "Task supprimée."})
+	c.JSON(http.StatusOK, gin.H{"message": "Task supprimée."})
 }

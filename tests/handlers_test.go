@@ -66,7 +66,7 @@ func TestRegisterHandler(t *testing.T) {
 
 func TestLoginHandler(t *testing.T) {
 	setupTestDB()
-	os.Setenv("JWT_SECRET", "test_secret_key")
+	os.Setenv("JWT_SECRET", "my_secret_key")
 
 	// Créer un utilisateur avec un mot de passe hashé
 	hashedPass, _ := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.DefaultCost)
@@ -113,7 +113,7 @@ func TestLoginHandler(t *testing.T) {
 }
 
 func createTestUserAndToken(t *testing.T) (models.User, string) {
-	os.Setenv("JWT_SECRET", "test_secret_key")
+	os.Setenv("JWT_SECRET", "my_secret_key")
 	password := "password"
 	hashedPass, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 
@@ -130,4 +130,175 @@ func createTestUserAndToken(t *testing.T) (models.User, string) {
 		t.Fatal("Erreur: Impossible de générer le token JWT")
 	}
 	return user, token
+}
+
+func TestCreateTask(t *testing.T) {
+	setupTestDB()
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	_, token := createTestUserAndToken(t)
+
+	router := gin.Default()
+	router.POST("/tasks", handlers.CreateTask)
+
+	taskData := map[string]string{
+		"title": "Test Task",
+		// status: Non donné, doit être défini à "todo" par défaut
+		"description": "Test Task Description",
+	}
+
+	jsonData, _ := json.Marshal(taskData)
+	req, _ := http.NewRequest("POST", "/tasks", bytes.NewBuffer(jsonData))
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Task crée !", response["message"])
+	log.Println(response)
+
+	task, ok := response["task"].(map[string]interface{})
+	assert.True(t, ok, "La tâche doit être un objet JSON")
+
+	assert.Equal(t, "Test Task", task["title"])
+	assert.Equal(t, "Test Task Description", task["description"])
+	assert.Equal(t, "todo", task["status"]) // test le status par defaut
+}
+
+func TestGetTasks(t *testing.T) {
+	setupTestDB()
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	user, token := createTestUserAndToken(t)
+
+	task1 := models.Task{Title: "Task 1", Description: "Task 1 Description", Status: "todo", UserID: user.ID}
+	task2 := models.Task{Title: "Task 2", Description: "Task 2 Description", Status: "done", UserID: user.ID}
+
+	config.DB.Create(&task1)
+	config.DB.Create(&task2)
+
+	router := gin.Default()
+	router.GET("/tasks", handlers.GetTasks)
+
+	req, _ := http.NewRequest("GET", "/tasks", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	tasks, ok := response["tasks"].([]interface{})
+	assert.True(t, ok, "Les tâches doivent être un tableau JSON")
+	assert.Len(t, tasks, 2, "Il doit y avoir 2 tâches")
+	log.Println(response)
+}
+
+// TestGetTask verifies that a single task can be retrieved.
+func TestGetTask(t *testing.T) {
+	setupTestDB()
+	user, token := createTestUserAndToken(t)
+
+	// Create a task.
+	task := models.Task{Title: "Task Get", Description: "Description Get", Status: "done", UserID: user.ID}
+	config.DB.Create(&task)
+
+	router := gin.Default()
+	router.GET("/tasks/:id", handlers.GetTask)
+
+	req, _ := http.NewRequest("GET", "/tasks/"+strconv.Itoa(int(task.ID)), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	taskResp, ok := response["task"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "Task Get", taskResp["title"])
+	assert.Equal(t, "Description Get", taskResp["description"])
+	assert.Equal(t, "done", taskResp["status"])
+}
+
+// TestUpdateTask verifies that a task can be updated, including its status.
+func TestUpdateTask(t *testing.T) {
+	setupTestDB()
+	user, token := createTestUserAndToken(t)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	// Create a task.
+	task := models.Task{Title: "Task Update", Description: "Old Description", Status: "todo", UserID: user.ID}
+	config.DB.Create(&task)
+
+	router := gin.Default()
+	router.PUT("/tasks/:id", handlers.UpdateTask)
+
+	updatedData := map[string]string{
+		"title":       "Task Updated",
+		"description": "New Description",
+		"status":      "in progress",
+	}
+	jsonData, _ := json.Marshal(updatedData)
+	req, _ := http.NewRequest("PUT", "/tasks/"+strconv.Itoa(int(task.ID)), bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Task mise a jour !", response["message"])
+
+	taskResp, ok := response["task"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "Task Updated", taskResp["title"])
+	assert.Equal(t, "New Description", taskResp["description"])
+	assert.Equal(t, "in progress", taskResp["status"])
+}
+
+// TestDeleteTask verifies that a task can be deleted.
+func TestDeleteTask(t *testing.T) {
+	setupTestDB()
+	user, token := createTestUserAndToken(t)
+
+	// Create a task.
+	task := models.Task{Title: "Task Delete", Description: "Description Delete", Status: "done", UserID: user.ID}
+	config.DB.Create(&task)
+
+	router := gin.Default()
+	router.DELETE("/tasks/:id", handlers.DeleteTask)
+
+	req, _ := http.NewRequest("DELETE", "/tasks/"+strconv.Itoa(int(task.ID)), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Task supprimée.", response["message"])
+
+	// Verify that the task was removed.
+	var deletedTask models.Task
+	err = config.DB.First(&deletedTask, task.ID).Error
+	assert.Error(t, err) // Expected error because the task should be deleted.
 }
