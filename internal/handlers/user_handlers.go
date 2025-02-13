@@ -15,7 +15,7 @@ import (
 
 var userService services.UserService
 
-func InitUserHanlers(s services.UserService) {
+func InitUserHandlers(s services.UserService) {
 	userService = s
 }
 
