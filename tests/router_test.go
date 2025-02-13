@@ -37,7 +37,7 @@ func initRouterTest() *gin.Engine {
 	// Service User
 	userRepo := repository.NewUserRepository()
 	userSvc := services.NewUserService(userRepo)
-	handlers.InitUserHanlers(userSvc)
+	handlers.InitUserHandlers(userSvc)
 
 	// Service Task
 	taskRepo := repository.NewTaskRepository()
@@ -101,6 +101,7 @@ func TestRouterRegisterAndLogin(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
+	// On attend 200 si le login est réussi.
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var loginResp map[string]string
